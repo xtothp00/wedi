@@ -107,19 +107,6 @@ scan_editors()
   return 0
 }
 
-open_file()
-{
-  echo "Openning file ${1}..."
-
-  for i in {0..7}
-  do
-    if let "STAT_REG ^ (1 << ${i})"; then
-      eval echo ${EDITORS[${i}]}
-    fi
-  done
-}
-
-
 # function to get the absolute path and a bit more
 get_path()
 {
@@ -148,7 +135,7 @@ get_path()
 
 evaluate_date()
 {
-  echo "${1}" | grep -E '^[0-9]{4}\-((((0[13578])|(1[02]))\-(([0-2][0-9])|(3[01])))|(((0[469])|(11))\-(([0-2][0-9])|(30)))|(02\-[0-2][0-9]))$' -q
+  date -d $(echo "${1}" | grep -E '^[0-9]{4}\-((((0[13578])|(1[02]))\-(([0-2][0-9])|(3[01])))|(((0[469])|(11))\-(([0-2][0-9])|(30)))|(02\-[0-2][0-9]))$') +%s 2>/dev/null
   return
 }
 
@@ -171,61 +158,100 @@ call_editor()
   return
 }
 
-push_rc()
+# formating file's path received on the STDIN or as the first
+# pocitional parameter to STDOUT
+fmt_rec()
 {
   if [ -z ${1} ]; then
+    declare local tmp
     read tmp
     set "${tmp}"
   fi
 
-  printf "%10d %s\n" $(date +%s) ${1} >> ${rc_path};
+  printf "%10d \"%s/\" \"%s\"\n" $(date +%s) $(dirname ${1}) $(basename ${1})
+}
+
+# pushing string received on STDIN or the first positional parameter
+# to the top of the stack
+push_rc()
+{
+  if [ -z ${1} ]; then
+    declare local tmp
+    read tmp
+    set "${tmp}"
+  fi
+
+  echo ${1} >> ${rc_path};
 
   return
 }
 
+# pushing string received on STDIN or the first positional parameter
+# to the bottom of the stack
 hsup_rc()
 {
   if [ -z ${1} ]; then
+    declare local tmp
     read tmp
     set "${tmp}"
   fi
 
-  local tmp=$(printf "%10d %s\n" $(date +%s) ${1})
   sed "1 i\\${1}" -i ${rc_path};
 
   return
 }
 
+# pop from the stack
 pop_rc()
 {
-  local tmp=$(read_rc)
+  if [ -z ${1} ]; then
+#    declare local tmp=$(cat)
+    read_rc
+#    echo ${tmp} | del_rc
+  else
+    declare local tmp=$(read_rc ${1})
 
-  if [ -z ${tmp} ]; then
-    return 1
+#    if [ "${tmp}" ]; then
+    del_rc ${1}
+    echo ${tmp}
+#    else
+#      return 1
+#    fi
   fi
 
-  del_rc
-
   return
 }
 
+# reads from the last line from the STDIN or from the fileű
+# provided as the first positioal parameter
 read_rc()
 {
-  sed -n '$ p' <${rc_path}
+  if [ -z ${1} ]; then
+    sed -n '$ p'
+  else
+    sed -n '$ p' <${1}
+  fi
 
   return
 }
 
+# deletes the last line in the similar was as the read read_rc() reads
+# if no file name is provided as the first argument then a stream is read
+# from the STDIN and sent to the STDOUT
 del_rc()
 {
-  sed '$ d' -i ${rc_path}
+  if [ -z ${1} ]; then
+    sed '$ d'
+  else
+    sed '$ d' -i ${1}
+  fi
 
   return
 }
 
 rot_rc()
 {
-  pop_rc | hsup_rc
+  pop_rc ${1} | hsup_rc
 
   return
 }
@@ -294,24 +320,31 @@ get_by_file()
 # the no. of records is being spit to the STDOUT
 cnt_rec_rc()
 {
-  grep -v -e '^[[:blank:]]*#' ${1:-'-'} | wc -l | sed -e 's/^[ \t]*//;s/[ \t]*$//'
+  case ${1} in
+
+    -r)
+      cat ${2:-'-'} | grep -v -e '^[[:blank:]]*#' ${1:-'-'} | wc -l | sed -e 's/^[ \t]*//;s/[ \t]*$//'
+      return
+      ;;
+
+    -a)
+      cat ${2:-'-'} | wc -l | sed -e 's/^[ \t]*//;s/[ \t]*$//'
+      return
+      ;;
+
+  esac
+
+  return
 }
 
-init;
-init_return_code=${?}
-
-if [ ${init_return_code} -eq 0 ]; then
-  echo "Successfully initialized. Return Code: ${init_return_code}"
-else
-  echo "Initialization unsuccessful. Return Code: ${init_return_code}"
-  exit ${init_return_code}
-fi
-
+parse_pospars()
+{
+echo
 echo ">  Processing the options/arguments   >"
-
-
+echo
 
 i=1;
+j=${i};
 while [ ${i} -le ${#} ]
 do
   echo -n "${i} -- ${#} -- "; eval echo \${${i}};
@@ -320,7 +353,7 @@ do
   current_path_retval=${?}
 
   echo " "
-  echo ">>>>>>>-- \'${current_path}\' -- \'${current_path_retval}\' --<<<<<<<<<<"
+  echo ">>>>>>>-- '${current_path}' -- '${current_path_retval}' --<<<<<<<<<<"
   echo " "
 
   case ${current_path_retval} in
@@ -336,6 +369,7 @@ do
           path_retval=${?}
           if [ ${path_retval} -eq 3 ]; then
             echo "...from directory: ${path}"
+            cat ${rc_path} | grep -e " \"${path}\" " | cut -d ' ' -f 3 | sort | uniq -c | sort | tail -1 | awk -F '"' '{ print $2 }'
             let "i += 2";
           elif [ ${path_retval} -eq 4 ]; then
             echo "...wait a minute, init this a file? ${path}"
@@ -344,6 +378,7 @@ do
             echo "...hmmm it seems, that the next positional parameter is an option. ${j}"
             path=$(get_path '.')
             echo "using the current working directory... @ ${path}"
+            cat ${rc_path} | grep -e " \"${path}\" " | cut -d ' ' -f 3 | sort | uniq -c | sort | tail -1 | awk -F '"' '{ print $2 }'
             let "i++";
           fi
           ;;
@@ -355,6 +390,7 @@ do
           path_retval=${?}
           if [ ${path_retval} -eq 3 ]; then
             echo "...from directory: ${path}"
+            cat ${rc_path} | grep -e " \"${path}\" " | cut -d ' ' -f 3 | tail -1 | awk -F '"' '{ print $2 }'
             let "i += 2";
           elif [ ${path_retval} -eq 4 ]; then
             echo "...wait a minute, init this a file? ${path}"
@@ -363,71 +399,61 @@ do
             echo "...hmmm it seems, that the next positional parameter is an option. ${j}"
             path=$(get_path '.')
             echo "using the current working directory... @ ${path}"
+            cat ${rc_path} | grep -e " \"${path}\" " | cut -d ' ' -f 3 | tail -1 | awk -F '"' '{ print $2 }'
             let "i++";
           fi
           ;;
 
-        -a)
+        -a|b)
           let "j = i + 1";
-          date=$(eval echo \${${j}})
-#          date_retval=$(evaluate_date ${date}))
+          declare local date=$(eval echo \${${j}})
+          declare local date_epoch=$(evaluate_date ${date})
+          declare local date_retval=${?}
           let "k = i + 2";
+          declare local path
           path=$(get_path $(eval echo \${${k}}))
-          path_retval=${?}
-          if evaluate_date ${date}; then
-            echo "files called AFTER ${date}..."
-            if [ ${path_retval} -eq 3 ]; then
-              echo "...from directory: ${path}"
-              let "i += 3";
-            elif [ ${path_retval} -eq 4 ]; then
-              echo "...wait a minute, init this a file? ${path}"
-              let "i += 3";
-            elif [ ${path_retval} -eq 1 ]; then
-              echo "...hmmm it seems, that the next positional parameter is an option. ${j}"
-              path=$(get_path '.')
-              echo "using the current working directory... @ ${path}"
-              let "i++"
-            fi
+          declare local path_retval=${?}
+          if [ 0 -eq ${date_retval} ]; then
+            case "$(eval echo \${${i}})" in
+            -a)
+              echo "files called AFTER ${date}..."
+              echo "${path_retval} -- ${path}"
+              echo
+              if [ ${path_retval} -eq 3 ]; then
+                echo "...from directory: ${path}"
+                cat ${rc_path} | grep -e " \"${path}\" " | awk -v date_epoch=${date_epoch} '$1>=date_epoch { gsub(/"/, "", $3); print $3 }'
+                let "i += 3";
+              elif [ ${path_retval} -eq 4 ]; then
+                echo "...wait a minute, init this a file? ${path}"
+                let "i += 3";
+              elif [ ${path_retval} -eq 1 ]; then
+                echo "...hmmm it seems, that the next positional parameter is an option. ${j}"
+                path=$(get_path '.')
+                echo "using the current working directory... @ ${path}"
+                cat ${rc_path} | grep -e " \"${path}\" " | awk -v date_epoch=${date_epoch} '$1>=date_epoch { gsub(/"/, "", $3); print $3 }'
+                let "i++"
+              fi
+              ;;
+            -b)
+              echo "files called BEFORE ${date}..."
+              if [ ${path_retval} -eq 3 ]; then
+                echo "...from directory: ${path}"
+                cat ${rc_path} | grep -e " \"${path}\" " | awk -v date_epoch=${date_epoch} '$1<date_epoch { gsub(/"/, "", $3); print $3 }'
+                let "i += 3";
+              elif [ ${path_retval} -eq 4 ]; then
+                echo "...wait a minute, init this a file? ${path}"
+                let "i += 3";
+              elif [ ${path_retval} -eq 1 ]; then
+                echo "...hmmm it seems, that the next positional parameter is an option. ${j}"
+                path=$(get_path '.')
+                echo "using the current working directory... @ ${path}"
+                cat ${rc_path} | grep -e " \"${path}\" " | awk -v date_epoch=${date_epoch} '$1<date_epoch { gsub(/"/, "", $3); print $3 }'
+                let "i++"
+              fi
+              ;;
+            esac
           else
             echo "wrrrroooonnnnngggggg DATE to list files called AFTER \"${date}\"..."
-            if [ ${path_retval} -eq 3 ]; then
-              echo "...from directory: ${path}"
-              let "i += 3";
-            elif [ ${path_retval} -eq 4 ]; then
-              echo "...wait a minute, init this a file? ${path}"
-              let "i += 3";
-            elif [ ${path_retval} -eq 1 ]; then
-              echo "...hmmm it seems, that the next positional parameter is an option. ${j}"
-              path=$(get_path '.')
-              echo "using the current working directory... @ ${path}"
-              let "i += 2"
-            fi
-          fi
-          ;;
-
-        -b)
-          let "j = i + 1";
-          date=$(eval echo \${${j}})
-#          date_retval=$(evaluate_date ${date}))
-          let "k = i + 2";
-          path=$(get_path $(eval echo \${${k}}))
-          path_retval=${?}
-          if evaluate_date ${date}; then
-            echo "files called BEFORE ${date}..."
-            if [ ${path_retval} -eq 3 ]; then
-              echo "...from directory: ${path}"
-              let "i += 3";
-            elif [ ${path_retval} -eq 4 ]; then
-              echo "...wait a minute, init this a file? ${path}"
-              let "i += 3";
-            elif [ ${path_retval} -eq 1 ]; then
-              echo "...hmmm it seems, that the next positional parameter is an option. ${j}"
-              path=$(get_path '.')
-              echo "using the current working directory... @ ${path}"
-              let "i++"
-            fi
-          else
-            echo "wrrrroooonnnnngggggg DATE to list files called BEFORE \"${date}\"..."
             if [ ${path_retval} -eq 3 ]; then
               echo "...from directory: ${path}"
               let "i += 3";
@@ -447,15 +473,21 @@ do
 
     3)
       eval echo "\${${i}} is a directory with absolute path: ${current_path}"
-      lines=$(cnt_rec_rc ${rc_path} )
-      echo ">>>> ${lines} <<<<"
-      while [ $lines -gt 0 ]
+      rec_no=$(cnt_rec_rc -r ${rc_path} )
+      lin_no=$(cnt_rec_rc -a ${rc_path})
+
+      echo " "
+      echo ">>>> ${records} <<<<"
+      echo " "
+
+      while [ $lin_no -gt 0 ]
       do
         local tmp=$(read_rc)
-        if [ echo ${tmp} | grep -e "${current_path}" -q ]; then
+        if [ { echo ${tmp} | grep -e "${current_path}" -q } ]; then
           echo ${tmp} | awk '{ print $2 }'
         fi
       rot_rc
+      let "lin_no--";
       done
 
       let "i++";
@@ -463,7 +495,8 @@ do
 
     4)
       eval echo "\${${i}} is or will be a file at the following path: ${current_path}"
-      push_rc ${current_path}
+
+      push_rc "${current_path}"
       call_editor ${current_path}
 
       let "i++";
@@ -471,5 +504,19 @@ do
 
   esac
 done
+return
+}
+
+init;
+init_return_code=${?}
+
+if [ ${init_return_code} -eq 0 ]; then
+  echo "Successfully initialized. Return Code: ${init_return_code}"
+else
+  echo "Initialization unsuccessful. Return Code: ${init_return_code}"
+  exit ${init_return_code}
+fi
+
+parse_pospars ${*};
 
 exit
