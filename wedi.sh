@@ -181,7 +181,7 @@ push_rc()
     set "${tmp}"
   fi
 
-  echo ${1} >> ${rc_path};
+  echo ${1} | fmt_rec >> ${rc_path};
 
   return
 }
@@ -322,13 +322,13 @@ cnt_rec_rc()
 {
   case ${1} in
 
-    -r)
-      cat ${2:-'-'} | grep -v -e '^[[:blank:]]*#' ${1:-'-'} | wc -l | sed -e 's/^[ \t]*//;s/[ \t]*$//'
+    -a)
+      cat ${2:-'-'} | wc -l | sed -e 's/^[ \t]*//;s/[ \t]*$//'
       return
       ;;
 
-    -a)
-      cat ${2:-'-'} | wc -l | sed -e 's/^[ \t]*//;s/[ \t]*$//'
+    -r)
+      cat ${2:-'-'} | grep -v -e '^[[:blank:]]*#' | wc -l | sed -e 's/^[ \t]*//;s/[ \t]*$//'
       return
       ;;
 
@@ -345,8 +345,9 @@ echo
 
 i=1;
 j=${i};
-while [ ${i} -le ${#} ]
-do
+#while [ ${i} -le ${#} ]
+while
+#do
   echo -n "${i} -- ${#} -- "; eval echo \${${i}};
 
   current_path=$(get_path $(eval echo \${${i}}))
@@ -404,7 +405,7 @@ do
           fi
           ;;
 
-        -a|b)
+        -a|-b)
           let "j = i + 1";
           declare local date=$(eval echo \${${j}})
           declare local date_epoch=$(evaluate_date ${date})
@@ -436,6 +437,8 @@ do
               ;;
             -b)
               echo "files called BEFORE ${date}..."
+              echo "${path_retval} -- ${path}"
+              echo
               if [ ${path_retval} -eq 3 ]; then
                 echo "...from directory: ${path}"
                 cat ${rc_path} | grep -e " \"${path}\" " | awk -v date_epoch=${date_epoch} '$1<date_epoch { gsub(/"/, "", $3); print $3 }'
@@ -473,21 +476,23 @@ do
 
     3)
       eval echo "\${${i}} is a directory with absolute path: ${current_path}"
-      rec_no=$(cnt_rec_rc -r ${rc_path} )
+      rec_no=$(cnt_rec_rc -r ${rc_path})
       lin_no=$(cnt_rec_rc -a ${rc_path})
 
       echo " "
-      echo ">>>> ${records} <<<<"
+      echo ">>>> ${rec_no} records; ${lin_no} lines <<<<"
       echo " "
 
       while [ $lin_no -gt 0 ]
       do
-        local tmp=$(read_rc)
-        if [ { echo ${tmp} | grep -e "${current_path}" -q } ]; then
-          echo ${tmp} | awk '{ print $2 }'
+        declare local tmp=$(read_rc ${rc_path})
+        if echo ${tmp} | grep -e "\"${current_path}\"" -q; then
+          echo ${tmp} | awk '{ print $3 }'
+          call_editor $(cat "${current_path}/$(echo ${tmp} | awk '{ gsub(/"/, "", $3); print $3 }')")
+          break 1
         fi
-      rot_rc
-      let "lin_no--";
+        rot_rc ${rc_path}
+        let "lin_no--";
       done
 
       let "i++";
@@ -503,7 +508,9 @@ do
       ;;
 
   esac
-done
+  [ ${i} -le ${#} ]
+do :; done
+#done
 return
 }
 
