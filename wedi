@@ -133,12 +133,14 @@ get_path()
   fi
 }
 
+# checking the correctness of the provided date
 evaluate_date()
 {
   date -d $(echo "${1}" | grep -E '^[0-9]{4}\-((((0[13578])|(1[02]))\-(([0-2][0-9])|(3[01])))|(((0[469])|(11))\-(([0-2][0-9])|(30)))|(02\-[0-2][0-9]))$') +%s 2>/dev/null
   return
 }
 
+#calling the editor available on the system
 call_editor()
 {
   if [ -z ${1} ]; then
@@ -337,25 +339,17 @@ cnt_rec_rc()
   return
 }
 
+# parsing the positional parameters
 parse_pospars()
 {
-echo
-echo ">  Processing the options/arguments   >"
-echo
 
 i=1;
 j=${i};
-#while [ ${i} -le ${#} ]
+# trying to mimic the "do-while" cycle in POSIX-style
 while
-#do
-  echo -n "${i} -- ${#} -- "; eval echo \${${i}};
 
   current_path=$(get_path $(eval echo \${${i}}))
   current_path_retval=${?}
-
-  echo " "
-  echo ">>>>>>>-- '${current_path}' -- '${current_path_retval}' --<<<<<<<<<<"
-  echo " "
 
   case ${current_path_retval} in
 
